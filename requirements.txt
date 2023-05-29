@@ -1,0 +1,15 @@
+jupyter
+jupyterlab
+matplotlib
+torch
+torchtext
+torchvision
+sklearn
+pandas
+numpy
+transformers
+datasets
+tiktoken
+wandb
+tqdm
+
