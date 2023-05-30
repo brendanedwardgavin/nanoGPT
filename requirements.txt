@@ -1,5 +1,6 @@
 jupyter
 jupyterlab
+joblib
 matplotlib
 torch
 torchtext
