@@ -7,6 +7,7 @@ from tqdm import tqdm
 import joblib
 from joblib import Parallel, delayed
 
+# solution from https://stackoverflow.com/a/58936697
 @contextlib.contextmanager
 def tqdm_joblib(tqdm_object):
     """Context manager to patch joblib to report into tqdm progress bar given as argument"""
