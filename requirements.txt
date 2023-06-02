@@ -5,7 +5,7 @@ matplotlib
 torch
 torchtext
 torchvision
-sklearn
+scikit-learn
 pandas
 numpy
 transformers
