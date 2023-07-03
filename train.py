@@ -27,7 +27,12 @@ import torch
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.distributed import init_process_group, destroy_process_group
 
-from model import GPTConfig, GPT
+from model_te import GPTConfig, GPT
+
+import transformer_engine.pytorch as te
+from transformer_engine.common import recipe
+
+fp8_recipe = recipe.DelayedScaling(margin=0, interval=1, fp8_format=recipe.Format.E4M3)
 
 # -----------------------------------------------------------------------------
 # default config values designed to train a gpt2 (124M) on OpenWebText
@@ -71,6 +76,7 @@ backend = 'nccl' # 'nccl', 'gloo', etc.
 # system
 device = 'cuda' # examples: 'cpu', 'cuda', 'cuda:0', 'cuda:1' etc., or try 'mps' on macbooks
 dtype = 'bfloat16' # 'float32', 'bfloat16', or 'float16', the latter will auto implement a GradScaler
+fp8_enabled = True
 compile = True # use PyTorch 2.0 to compile the model to be faster
 # -----------------------------------------------------------------------------
 config_keys = [k for k,v in globals().items() if not k.startswith('_') and isinstance(v, (int, float, bool, str))]
@@ -106,8 +112,13 @@ torch.backends.cuda.matmul.allow_tf32 = True # allow tf32 on matmul
 torch.backends.cudnn.allow_tf32 = True # allow tf32 on cudnn
 device_type = 'cuda' if 'cuda' in device else 'cpu' # for later use in torch.autocast
 # note: float16 data type will automatically use a GradScaler
-ptdtype = {'float32': torch.float32, 'bfloat16': torch.bfloat16, 'float16': torch.float16}[dtype]
+ptdtype = {
+    'float32': torch.float32, 
+    'bfloat16': torch.bfloat16, 
+    'float16': torch.float16,
+    "fp8": torch.float32}[dtype]
 ctx = nullcontext() if device_type == 'cpu' else torch.amp.autocast(device_type=device_type, dtype=ptdtype)
+#ctx = ctx if dtype != "fp8" else te.fp8_autocast(enabled=True, fp8_recipe=fp8_recipe)
 
 # poor man's data loader
 data_dir = os.path.join('data', dataset)
@@ -140,7 +151,7 @@ if os.path.exists(meta_path):
 
 # model init
 model_args = dict(n_layer=n_layer, n_head=n_head, n_embd=n_embd, block_size=block_size,
-                  bias=bias, vocab_size=None, dropout=dropout) # start with model_args from command line
+                  bias=bias, vocab_size=None, dropout=dropout, fp8_enabled=fp8_enabled) # start with model_args from command line
 if init_from == 'scratch':
     # init a new model from scratch
     print("Initializing a new model from scratch")
@@ -185,6 +196,7 @@ elif init_from.startswith('gpt2'):
 if block_size < model.config.block_size:
     model.crop_block_size(block_size)
     model_args['block_size'] = block_size # so that the checkpoint will have the right value
+model.forward = te.fp8_autocast(enabled=fp8_enabled, fp8_recipe=fp8_recipe)(model.forward)
 model.to(device)
 
 # initialize a GradScaler. If enabled=False scaler is a no-op
@@ -197,6 +209,7 @@ if init_from == 'resume':
 checkpoint = None # free up memory
 
 # compile the model
+
 if compile:
     print("compiling the model... (takes a ~minute)")
     unoptimized_model = model
